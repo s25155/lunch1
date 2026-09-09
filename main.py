@@ -5,13 +5,13 @@ import requests
 import streamlit as st
 
 # ==========================================
-# 1. 페이지 설정 및 커스텀 CSS (형광펜 & 카드 스타일)
+# 1. 페이지 설정 및 커스텀 CSS (카드 정렬 & 스크롤 보완)
 # ==========================================
 st.set_page_config(
     page_title="한 달치 학교 급식 달력 🍱", page_icon="🍱", layout="wide"
 )
 
-# 카드 및 형광펜 효과를 위한 CSS 스타일링
+# 카드 높이 고정 및 스크롤 디자인
 st.markdown(
     """
     <style>
@@ -19,31 +19,59 @@ st.markdown(
     .stApp {
         background-color: #f8f9fa;
     }
-    /* 달력 카드 기본 스타일 */
+    
+    /* 달력 카드 기본 스타일 (높이 고정 및 내부 스크롤 적용) */
     .meal-card {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 10px;
         padding: 12px;
-        margin-bottom: 12px;
+        margin-bottom: 15px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-        min-height: 190px;
+        height: 230px; /* 모든 카드의 높이를 일정하게 고정 */
+        display: flex;
+        flex-direction: column;
     }
+    
     /* 오늘 날짜 카드 강조 */
     .meal-card-today {
         border: 2px solid #ff4b4b !important;
         background-color: #fff8f8 !important;
     }
-    /* 날짜 헤더 */
+    
+    /* 날짜 헤더 (상단 고정 영역) */
     .date-header {
         font-size: 1rem;
         font-weight: bold;
         color: #2d3748;
-        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #edf2f7;
+        margin-bottom: 6px;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-shrink: 0;
     }
+    
+    /* 메뉴 내용이 담기는 스크롤 가능 영역 */
+    .meal-content {
+        overflow-y: auto;
+        flex-grow: 1;
+        padding-right: 4px;
+    }
+    
+    /* 얇고 깔끔한 커스텀 스크롤바 */
+    .meal-content::-webkit-scrollbar {
+        width: 4px;
+    }
+    .meal-content::-webkit-scrollbar-thumb {
+        background-color: #cbd5e0;
+        border-radius: 4px;
+    }
+    .meal-content::-webkit-scrollbar-track {
+        background-color: transparent;
+    }
+
     /* TODAY 태그 */
     .today-tag {
         background-color: #ff4b4b;
@@ -53,19 +81,21 @@ st.markdown(
         border-radius: 4px;
         font-weight: bold;
     }
+    
     /* 급식 종류 및 칼로리 헤더 */
-    .badge-lunch { color: #1e88e5; font-weight: bold; font-size: 0.88rem; margin-top: 6px; }
-    .badge-dinner { color: #e53935; font-weight: bold; font-size: 0.88rem; margin-top: 6px; }
-    .badge-other { color: #43a047; font-weight: bold; font-size: 0.88rem; margin-top: 6px; }
-    .calorie-text { font-size: 0.78rem; color: #718096; font-weight: normal; }
+    .badge-lunch { color: #1e88e5; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
+    .badge-dinner { color: #e53935; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
+    .badge-other { color: #43a047; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
+    .calorie-text { font-size: 0.75rem; color: #718096; font-weight: normal; }
 
     /* 메뉴 아이템 스타일 */
     .menu-item {
-        font-size: 0.85rem;
+        font-size: 0.83rem;
         color: #4a5568;
         line-height: 1.4;
         margin: 2px 0;
     }
+    
     /* ⭐ 맛있는 메뉴 형광펜 하이라이트 */
     .highlight-yummy {
         background: linear-gradient(120deg, #fff176 0%, #ffd54f 100%);
@@ -74,12 +104,13 @@ st.markdown(
         padding: 1px 4px;
         border-radius: 3px;
     }
+    
     /* 급식 없음/해당 없음 텍스트 */
     .no-meal {
         color: #a0aec0;
         font-size: 0.82rem;
         font-style: italic;
-        margin-top: 8px;
+        margin-top: 10px;
     }
     </style>
 """,
@@ -299,7 +330,7 @@ if error_msg:
     st.error(f"🚨 {error_msg}")
     st.stop()
 
-# 날짜별, 급식종류별 데이터 매핑 구조: {일(int): {급식명: {'menu': ..., 'cal': ...}}}
+# 날짜별, 급식종류별 데이터 매핑 구조
 monthly_meals = {}
 if meal_raw_data:
     for row in meal_raw_data:
@@ -307,7 +338,7 @@ if meal_raw_data:
             day = int(row["MLSV_YMD"][6:8])
             meal_name = row["MMEAL_SC_NM"]  # 조식, 중식, 석식 등
             menu_text = row["DDISH_NM"]
-            calorie_info = row.get("CAL_INFO", "")  # 칼로리 정보 추출
+            calorie_info = row.get("CAL_INFO", "")  # 칼로리 정보
 
             if day not in monthly_meals:
                 monthly_meals[day] = {}
@@ -344,7 +375,9 @@ try:
                         """
                         <div class="meal-card" style="opacity: 0.4;">
                             <div class="date-header">-</div>
-                            <div class="no-meal">다른 달</div>
+                            <div class="meal-content">
+                                <div class="no-meal">다른 달</div>
+                            </div>
                         </div>
                         """,
                         unsafe_allow_html=True,
@@ -364,13 +397,14 @@ try:
                     "<span class='today-tag'>TODAY</span>" if is_today else ""
                 )
 
-                # 카드 HTML 시작
+                # 카드 상단 헤더
                 card_html = f"""
                 <div class="{card_class}">
                     <div class="date-header">
                         <span>{day}일 ({days_of_week[i][0]})</span>
                         {today_badge}
                     </div>
+                    <div class="meal-content">
                 """
 
                 # 급식 데이터 유무 검사
@@ -410,7 +444,7 @@ try:
                         else:
                             badge_html = f"<div class='badge-other'>🟢 {meal_type}{cal_str}</div>"
 
-                        # 메뉴 포맷팅 (알레르기 변환 + 형광펜 별표 하이라이트)
+                        # 메뉴 포맷팅
                         formatted_menu = format_menu_items(
                             meal_info["menu"], convert_allergy
                         )
@@ -424,7 +458,11 @@ try:
                             "<div class='no-meal'>🔍 해당 식단 없음</div>"
                         )
 
-                card_html += "</div>"  # card 닫기
+                # 카드 닫기
+                card_html += """
+                    </div>
+                </div>
+                """
 
                 st.markdown(card_html, unsafe_allow_html=True)
 
