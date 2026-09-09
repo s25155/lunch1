@@ -159,18 +159,20 @@ def format_menu_items(menu_str, convert_allergy=False):
 def load_csv_meals(file_path):
     """CSV 파일에서 데이터를 읽어 날짜별로 정리합니다."""
     if not os.path.exists(file_path):
-        return None, "파일을 찾을 수 없습니다."
+        return None, f"'{file_path}' 파일을 찾을 수 없습니다."
 
     try:
         df = pd.read_csv(file_path)
 
-        # 날짜 포맷 정리 (YYYYMMDD -> datetime)
-        df["급식일자"] = df["급식일자"].astype(str)
+        # 날짜 포맷 안전하게 정제 (YYYYMMDD)
+        df["급식일자"] = (
+            df["급식일자"].astype(str).str.replace(".0", "", regex=False).str.zfill(8)
+        )
         monthly_meals = {}
 
         for _, row in df.iterrows():
-            ymd = row["급식일자"]
-            if len(ymd) == 8:
+            ymd = str(row["급식일자"]).strip()
+            if len(ymd) == 8 and ymd.isdigit():
                 year = int(ymd[:4])
                 month = int(ymd[4:6])
                 day = int(ymd[6:8])
@@ -191,12 +193,12 @@ def load_csv_meals(file_path):
                 monthly_meals[(year, month)][day][meal_type] = {
                     "menu": menu_text,
                     "cal": cal_str,
-                    "school_name": row.get("학교명", "학교"),
+                    "school_name": str(row.get("학교명", "학교")),
                 }
 
         return monthly_meals, None
     except Exception as e:
-        return None, f"CSV 로드 중 오류 발생: {e}"
+        return None, f"CSV 파싱 중 오류 발생: {e}"
 
 
 # ==========================================
@@ -207,6 +209,7 @@ monthly_meals, error_msg = load_csv_meals(csv_filename)
 
 if error_msg:
     st.error(f"🚨 {error_msg}")
+    st.info("📌 `main.py` 파일과 같은 폴더 안에 `급식식단정보.csv` 파일이 들어있는지 확인해 주세요.")
     st.stop()
 
 st.title("🍱 한 달치 학교 급식 달력")
@@ -246,13 +249,9 @@ selected_month = (
 
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    selected_year = st.selectbox(
-        "연도 선택", available_years, index=0 if available_years else 0
-    )
+    selected_year = st.selectbox("연도 선택", available_years, index=0)
 with col2:
-    selected_month = st.selectbox(
-        "월 선택", available_months, index=0 if available_months else 0
-    )
+    selected_month = st.selectbox("월 선택", available_months, index=0)
 with col3:
     meal_filter = st.radio(
         "급식 종류 필터",
@@ -264,11 +263,11 @@ st.markdown("---")
 
 
 # ==========================================
-# 5. 달력 화면 렌더링 (안정적인 레이아웃)
+# 5. 달력 화면 렌더링
 # ==========================================
 current_month_data = monthly_meals.get((selected_year, selected_month), {})
 
-# 학교 이름 표시
+# 학교 이름 추출
 school_name = "학교"
 for d in current_month_data.values():
     for m in d.values():
@@ -305,8 +304,8 @@ for week_idx, week in enumerate(month_cal):
                 and day == now.day
             )
 
-            # 테두리가 있는 안전한 카드 구조
-            with st.container(border=True):
+            # 안전한 기본 컨테이너 사용 (버전 호환성 문제 해결)
+            with st.container():
                 today_tag = " 🔥 **TODAY**" if is_today else ""
                 st.markdown(f"**{day}일 ({days_of_week[i][0]})**{today_tag}")
 
