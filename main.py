@@ -5,112 +5,49 @@ import requests
 import streamlit as st
 
 # ==========================================
-# 1. 페이지 설정 및 커스텀 CSS (카드 정렬 & 스크롤 보완)
+# 1. 페이지 설정 및 커스텀 CSS (형광펜 & 가독성 스타일)
 # ==========================================
 st.set_page_config(
     page_title="한 달치 학교 급식 달력 🍱", page_icon="🍱", layout="wide"
 )
 
-# 카드 높이 고정 및 스크롤 디자인
+# 하이라이트 및 텍스트 스타일링 CSS
 st.markdown(
     """
     <style>
-    /* 메인 배경 */
+    /* 메인 배경 및 레이아웃 조정 */
     .stApp {
         background-color: #f8f9fa;
     }
     
-    /* 달력 카드 기본 스타일 (높이 고정 및 내부 스크롤 적용) */
-    .meal-card {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 12px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-        height: 230px; /* 모든 카드의 높이를 일정하게 고정 */
-        display: flex;
-        flex-direction: column;
-    }
-    
-    /* 오늘 날짜 카드 강조 */
-    .meal-card-today {
-        border: 2px solid #ff4b4b !important;
-        background-color: #fff8f8 !important;
-    }
-    
-    /* 날짜 헤더 (상단 고정 영역) */
-    .date-header {
-        font-size: 1rem;
-        font-weight: bold;
-        color: #2d3748;
-        padding-bottom: 6px;
-        border-bottom: 1px solid #edf2f7;
-        margin-bottom: 6px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-    }
-    
-    /* 메뉴 내용이 담기는 스크롤 가능 영역 */
-    .meal-content {
-        overflow-y: auto;
-        flex-grow: 1;
-        padding-right: 4px;
-    }
-    
-    /* 얇고 깔끔한 커스텀 스크롤바 */
-    .meal-content::-webkit-scrollbar {
-        width: 4px;
-    }
-    .meal-content::-webkit-scrollbar-thumb {
-        background-color: #cbd5e0;
-        border-radius: 4px;
-    }
-    .meal-content::-webkit-scrollbar-track {
-        background-color: transparent;
-    }
+    /* 급식 종류 및 칼로리 표시 */
+    .badge-lunch { color: #1e88e5; font-weight: bold; font-size: 0.92rem; margin-bottom: 4px; }
+    .badge-dinner { color: #e53935; font-weight: bold; font-size: 0.92rem; margin-bottom: 4px; }
+    .badge-other { color: #43a047; font-weight: bold; font-size: 0.92rem; margin-bottom: 4px; }
+    .calorie-text { font-size: 0.78rem; color: #718096; font-weight: normal; }
 
-    /* TODAY 태그 */
-    .today-tag {
-        background-color: #ff4b4b;
-        color: white;
-        font-size: 0.7rem;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-weight: bold;
-    }
-    
-    /* 급식 종류 및 칼로리 헤더 */
-    .badge-lunch { color: #1e88e5; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
-    .badge-dinner { color: #e53935; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
-    .badge-other { color: #43a047; font-weight: bold; font-size: 0.88rem; margin-top: 4px; }
-    .calorie-text { font-size: 0.75rem; color: #718096; font-weight: normal; }
-
-    /* 메뉴 아이템 스타일 */
+    /* 메뉴 항목 스타일 */
     .menu-item {
-        font-size: 0.83rem;
-        color: #4a5568;
-        line-height: 1.4;
-        margin: 2px 0;
+        font-size: 0.85rem;
+        color: #2d3748;
+        line-height: 1.5;
+        margin: 3px 0;
     }
     
-    /* ⭐ 맛있는 메뉴 형광펜 하이라이트 */
+    /* ⭐ 맛있는 메뉴 노란색 형광펜 하이라이트 */
     .highlight-yummy {
         background: linear-gradient(120deg, #fff176 0%, #ffd54f 100%);
         color: #1a202c;
         font-weight: bold;
-        padding: 1px 4px;
-        border-radius: 3px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        display: inline-block;
     }
     
-    /* 급식 없음/해당 없음 텍스트 */
-    .no-meal {
+    /* 알레르기 안내 텍스트 */
+    .allergy-info {
+        font-size: 0.75rem;
         color: #a0aec0;
-        font-size: 0.82rem;
-        font-style: italic;
-        margin-top: 10px;
     }
     </style>
 """,
@@ -118,7 +55,7 @@ st.markdown(
 )
 
 # ==========================================
-# 2. 알레르기 및 맛있는 메뉴 키워드 정의
+# 2. 알레르기 및 인기/맛있는 메뉴 키워드 정의
 # ==========================================
 ALLERGY_MAP = {
     "1": "난류",
@@ -142,7 +79,7 @@ ALLERGY_MAP = {
     "19": "잣",
 }
 
-# ⭐ 형광펜 칠하고 별표 표시할 인기/맛있는 메뉴 키워드 목록
+# ⭐ 형광펜 칠하고 별표 표시할 맛있는 인기 메뉴 키워드
 SPECIAL_KEYWORDS = [
     "치킨",
     "닭강정",
@@ -185,22 +122,24 @@ SPECIAL_KEYWORDS = [
 # 3. 헬퍼 함수
 # ==========================================
 def format_menu_items(menu_str, convert_allergy=False):
-    """메뉴 문자열을 파싱하여 알레르기 변환 및 형광펜/별표 하이라이트를 적용한 HTML을 반환합니다."""
+    """메뉴 문자열을 라인별로 분석하여 알레르기 변환 및 형광펜/별표 HTML 반환"""
     lines = menu_str.split("<br/>")
-    formatted_html = []
+    formatted_html_list = []
 
     for line in lines:
         line = line.strip()
         if not line:
             continue
 
-        # 1. 알레르기 숫자 변환 처리
+        # 1. 알레르기 숫자 변환
         if convert_allergy:
 
             def replace_allergy(match):
                 numbers = match.group(1).split(".")
                 names = [ALLERGY_MAP.get(num, num) for num in numbers if num]
-                return f" <span style='font-size:0.75rem; color:#a0aec0;'>({', '.join(names)})</span>"
+                return (
+                    f" <span class='allergy-info'>({', '.join(names)})</span>"
+                )
 
             line = re.sub(r"\(([\d\.]+)\)", replace_allergy, line)
 
@@ -208,18 +147,18 @@ def format_menu_items(menu_str, convert_allergy=False):
         is_special = any(keyword in line for keyword in SPECIAL_KEYWORDS)
 
         if is_special:
-            item_code = f"<div class='menu-item'>⭐ <span class='highlight-yummy'>{line}</span></div>"
+            item_html = f"<div class='menu-item'>⭐ <span class='highlight-yummy'>{line}</span></div>"
         else:
-            item_code = f"<div class='menu-item'>• {line}</div>"
+            item_html = f"<div class='menu-item'>• {line}</div>"
 
-        formatted_html.append(item_code)
+        formatted_html_list.append(item_html)
 
-    return "".join(formatted_html)
+    return "".join(formatted_html_list)
 
 
 @st.cache_data(ttl=3600)
 def fetch_month_meals(office_code, school_code, year, month, api_key):
-    """NEIS API에서 지정된 월의 전체 급식 데이터를 조회합니다."""
+    """NEIS API에서 지정된 월의 전체 급식 데이터 조회"""
     _, last_day = calendar.monthrange(year, month)
 
     from_ymd = f"{year}{month:02d}01"
@@ -352,14 +291,14 @@ if meal_raw_data:
 
 
 # ==========================================
-# 7. 달력 화면 렌더링
+# 7. 달력 화면 렌더링 (안정적인 st.container 사용)
 # ==========================================
 try:
     month_cal = calendar.monthcalendar(selected_year, selected_month)
     days_of_week = ["월요일", "화요일", "수요일", "목요일", "금요일"]
 
     for week_idx, week in enumerate(month_cal):
-        workdays = week[:5]  # 월~금 평일만 사용
+        workdays = week[:5]  # 월~금 평일만 추출
 
         if sum(workdays) == 0:
             continue
@@ -371,100 +310,72 @@ try:
             with cols[i]:
                 # 지난 달 / 다음 달 날짜 처리
                 if day == 0:
-                    st.markdown(
-                        """
-                        <div class="meal-card" style="opacity: 0.4;">
-                            <div class="date-header">-</div>
-                            <div class="meal-content">
-                                <div class="no-meal">다른 달</div>
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.caption(f"{days_of_week[i]}")
+                    st.info("다른 달")
                     continue
 
+                # 오늘 날짜 여부 체크
                 is_today = (
                     selected_year == now.year
                     and selected_month == now.month
                     and day == now.day
                 )
 
-                card_class = (
-                    "meal-card meal-card-today" if is_today else "meal-card"
-                )
-                today_badge = (
-                    "<span class='today-tag'>TODAY</span>" if is_today else ""
-                )
+                # Streamlit 기본 테두리 컨테이너 사용 (깨짐 방지)
+                with st.container(border=True):
+                    # 헤더 날짜 표시
+                    today_badge = " 🔥 **TODAY**" if is_today else ""
+                    st.markdown(
+                        f"**{day}일 ({days_of_week[i][0]})**{today_badge}"
+                    )
 
-                # 카드 상단 헤더
-                card_html = f"""
-                <div class="{card_class}">
-                    <div class="date-header">
-                        <span>{day}일 ({days_of_week[i][0]})</span>
-                        {today_badge}
-                    </div>
-                    <div class="meal-content">
-                """
+                    # 급식 데이터 존재 여부 확인
+                    if day not in monthly_meals:
+                        st.caption("😴 급식 없음")
+                    else:
+                        day_meals = monthly_meals[day]
+                        displayed_any = False
 
-                # 급식 데이터 유무 검사
-                if day not in monthly_meals:
-                    card_html += "<div class='no-meal'>😴 급식 없음</div>"
-                else:
-                    day_meals = monthly_meals[day]
-                    displayed_any = False
+                        for meal_type, meal_info in day_meals.items():
+                            # 필터링 조건
+                            if (
+                                meal_filter == "중식만 보기"
+                                and meal_type != "중식"
+                            ):
+                                continue
+                            if (
+                                meal_filter == "석식만 보기"
+                                and meal_type != "석식"
+                            ):
+                                continue
 
-                    for meal_type, meal_info in day_meals.items():
-                        # 필터링 조건
-                        if (
-                            meal_filter == "중식만 보기"
-                            and meal_type != "중식"
-                        ):
-                            continue
-                        if (
-                            meal_filter == "석식만 보기"
-                            and meal_type != "석식"
-                        ):
-                            continue
+                            displayed_any = True
 
-                        displayed_any = True
+                            # 칼로리 텍스트 구성
+                            cal_str = (
+                                f"<span class='calorie-text'>({meal_info['cal']})</span>"
+                                if meal_info["cal"]
+                                else ""
+                            )
 
-                        # 칼로리 텍스트 구성
-                        cal_str = (
-                            f" <span class='calorie-text'>({meal_info['cal']})</span>"
-                            if meal_info["cal"]
-                            else ""
-                        )
+                            # 급식 종류별 색상 배지
+                            if meal_type == "중식":
+                                badge_html = f"<div class='badge-lunch'>🔵 {meal_type} {cal_str}</div>"
+                            elif meal_type == "석식":
+                                badge_html = f"<div class='badge-dinner'>🔴 {meal_type} {cal_str}</div>"
+                            else:
+                                badge_html = f"<div class='badge-other'>🟢 {meal_type} {cal_str}</div>"
 
-                        # 급식 종류별 색상 배지
-                        if meal_type == "중식":
-                            badge_html = f"<div class='badge-lunch'>🔵 {meal_type}{cal_str}</div>"
-                        elif meal_type == "석식":
-                            badge_html = f"<div class='badge-dinner'>🔴 {meal_type}{cal_str}</div>"
-                        else:
-                            badge_html = f"<div class='badge-other'>🟢 {meal_type}{cal_str}</div>"
+                            st.markdown(badge_html, unsafe_allow_html=True)
 
-                        # 메뉴 포맷팅
-                        formatted_menu = format_menu_items(
-                            meal_info["menu"], convert_allergy
-                        )
+                            # 메뉴 항목 포맷팅 (형광펜, 별표 적용)
+                            formatted_menu = format_menu_items(
+                                meal_info["menu"], convert_allergy
+                            )
+                            st.markdown(formatted_menu, unsafe_allow_html=True)
 
-                        card_html += (
-                            f"{badge_html}<div>{formatted_menu}</div>"
-                        )
-
-                    if not displayed_any:
-                        card_html += (
-                            "<div class='no-meal'>🔍 해당 식단 없음</div>"
-                        )
-
-                # 카드 닫기
-                card_html += """
-                    </div>
-                </div>
-                """
-
-                st.markdown(card_html, unsafe_allow_html=True)
+                        if not displayed_any:
+                            st.caption("🔍 해당 식단 없음")
 
 except Exception as e:
     st.error(f"🖥️ 화면을 구성하는 중에 오류가 발생했습니다: {e}")
