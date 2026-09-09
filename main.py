@@ -211,8 +211,8 @@ if "NEIS_KEY" not in st.secrets:
 
 api_key = st.secrets["NEIS_KEY"]
 
-# 제주중앙고등학교 (B10, 9290088) 기본값 설정
-office_code = st.sidebar.text_input("시도교육청코드", value="B10")
+# T10 (제주특별자치도교육청) 기본값 설정
+office_code = st.sidebar.text_input("시도교육청코드", value="T10")
 school_code = st.sidebar.text_input("표준학교코드", value="9290088")
 
 st.sidebar.markdown("---")
