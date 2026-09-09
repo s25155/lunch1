@@ -1,21 +1,21 @@
 import calendar
 from datetime import datetime
+import os
 import re
-import requests
+import pandas as pd
 import streamlit as st
 
 # ==========================================
-# 1. 페이지 설정 및 커스텀 CSS (형광펜 & 가독성 스타일)
+# 1. 페이지 설정 및 커스텀 CSS (스타일링)
 # ==========================================
 st.set_page_config(
     page_title="한 달치 학교 급식 달력 🍱", page_icon="🍱", layout="wide"
 )
 
-# 하이라이트 및 텍스트 스타일링 CSS
+# 텍스트 및 형광펜 스타일
 st.markdown(
     """
     <style>
-    /* 메인 배경 및 레이아웃 조정 */
     .stApp {
         background-color: #f8f9fa;
     }
@@ -34,7 +34,7 @@ st.markdown(
         margin: 3px 0;
     }
     
-    /* ⭐ 맛있는 메뉴 노란색 형광펜 하이라이트 */
+    /* ⭐ 인기 메뉴 형광펜 하이라이트 */
     .highlight-yummy {
         background: linear-gradient(120deg, #fff176 0%, #ffd54f 100%);
         color: #1a202c;
@@ -55,7 +55,7 @@ st.markdown(
 )
 
 # ==========================================
-# 2. 알레르기 및 인기/맛있는 메뉴 키워드 정의
+# 2. 알레르기 매핑 및 형광펜 키워드
 # ==========================================
 ALLERGY_MAP = {
     "1": "난류",
@@ -79,59 +79,58 @@ ALLERGY_MAP = {
     "19": "잣",
 }
 
-# ⭐ 형광펜 칠하고 별표 표시할 맛있는 인기 메뉴 키워드
 SPECIAL_KEYWORDS = [
     "치킨",
-    "닭강정",
+    "닭",
     "고기",
     "불고기",
     "갈비",
-    "삼겹",
-    "돈가스",
     "돈까스",
+    "돈가스",
+    "가츠",
     "카츠",
     "스테이크",
     "떡볶이",
-    "스파게티",
     "파스타",
+    "스파게티",
     "피자",
     "햄버거",
-    "짜장",
-    "짬뽕",
-    "탕수육",
-    "우동",
-    "라멘",
-    "마라",
     "소시지",
     "소세지",
     "핫도그",
-    "와플",
+    "파이",
+    "아이스티",
     "아이스크림",
-    "푸딩",
-    "케이크",
-    "에이드",
-    "주스",
-    "쥬스",
-    "식혜",
-    "타코야끼",
-    "초밥",
+    "젤리",
+    "요거트",
+    "떡",
+    "그라탕",
+    "훈제",
+    "골뱅이",
+    "오징어",
 ]
 
 
 # ==========================================
-# 3. 헬퍼 함수
+# 3. 헬퍼 함수 (메뉴 파싱)
 # ==========================================
 def format_menu_items(menu_str, convert_allergy=False):
-    """메뉴 문자열을 라인별로 분석하여 알레르기 변환 및 형광펜/별표 HTML 반환"""
-    lines = menu_str.split("<br/>")
-    formatted_html_list = []
+    """메뉴 문자열을 라인별로 정제하고 알레르기 변환 및 형광펜 강조 적용"""
+    if pd.isna(menu_str):
+        return ""
+
+    lines = str(menu_str).split("<br/>")
+    formatted_list = []
 
     for line in lines:
         line = line.strip()
         if not line:
             continue
 
-        # 1. 알레르기 숫자 변환
+        # 특수 기호(&, && 등) 정리
+        clean_line = re.sub(r"^&+", "", line).strip()
+
+        # 알레르기 변환
         if convert_allergy:
 
             def replace_allergy(match):
@@ -141,113 +140,119 @@ def format_menu_items(menu_str, convert_allergy=False):
                     f" <span class='allergy-info'>({', '.join(names)})</span>"
                 )
 
-            line = re.sub(r"\(([\d\.]+)\)", replace_allergy, line)
+            clean_line = re.sub(r"\(([\d\.]+)\)", replace_allergy, clean_line)
 
-        # 2. 맛있는 메뉴 키워드 포함 여부 검사
-        is_special = any(keyword in line for keyword in SPECIAL_KEYWORDS)
+        # 형광펜 키워드 포함 검사
+        is_special = any(keyword in clean_line for keyword in SPECIAL_KEYWORDS)
 
         if is_special:
-            item_html = f"<div class='menu-item'>⭐ <span class='highlight-yummy'>{line}</span></div>"
+            item_html = f"<div class='menu-item'>⭐ <span class='highlight-yummy'>{clean_line}</span></div>"
         else:
-            item_html = f"<div class='menu-item'>• {line}</div>"
+            item_html = f"<div class='menu-item'>• {clean_line}</div>"
 
-        formatted_html_list.append(item_html)
+        formatted_list.append(item_html)
 
-    return "".join(formatted_html_list)
+    return "".join(formatted_list)
 
 
-@st.cache_data(ttl=3600)
-def fetch_month_meals(office_code, school_code, year, month, api_key):
-    """NEIS API에서 지정된 월의 전체 급식 데이터 조회"""
-    _, last_day = calendar.monthrange(year, month)
-
-    from_ymd = f"{year}{month:02d}01"
-    to_ymd = f"{year}{month:02d}{last_day:02d}"
-
-    url = "https://open.neis.go.kr/hub/mealServiceDietInfo"
-    params = {
-        "KEY": api_key,
-        "Type": "json",
-        "pIndex": 1,
-        "pSize": 100,
-        "ATPT_OFCDC_SC_CODE": office_code,
-        "SD_SCHUL_CODE": school_code,
-        "MLSV_FROM_YMD": from_ymd,
-        "MLSV_TO_YMD": to_ymd,
-    }
+@st.cache_data
+def load_csv_meals(file_path):
+    """CSV 파일에서 데이터를 읽어 날짜별로 정리합니다."""
+    if not os.path.exists(file_path):
+        return None, "파일을 찾을 수 없습니다."
 
     try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        df = pd.read_csv(file_path)
 
-        if "mealServiceDietInfo" in data:
-            return data["mealServiceDietInfo"][1]["row"], None
-        elif "RESULT" in data:
-            if data["RESULT"]["CODE"] == "INFO-200":
-                return [], None
-            return None, f"API 오류: {data['RESULT']['MESSAGE']}"
-        else:
-            return None, "알 수 없는 응답 형식입니다."
+        # 날짜 포맷 정리 (YYYYMMDD -> datetime)
+        df["급식일자"] = df["급식일자"].astype(str)
+        monthly_meals = {}
 
-    except requests.exceptions.Timeout:
-        return None, "API 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
-    except requests.exceptions.RequestException as e:
-        return None, f"API 통신 실패: {e}"
+        for _, row in df.iterrows():
+            ymd = row["급식일자"]
+            if len(ymd) == 8:
+                year = int(ymd[:4])
+                month = int(ymd[4:6])
+                day = int(ymd[6:8])
+
+                meal_type = str(row["식사명"]).strip()  # 중식, 석식 등
+                menu_text = row["요리명"]
+
+                # 칼로리 정보 정제
+                cal_raw = str(row.get("칼로리정보", ""))
+                cal_match = re.search(r"([\d\.]+\s*Kcal)", cal_raw)
+                cal_str = cal_match.group(1) if cal_match else ""
+
+                if (year, month) not in monthly_meals:
+                    monthly_meals[(year, month)] = {}
+                if day not in monthly_meals[(year, month)]:
+                    monthly_meals[(year, month)][day] = {}
+
+                monthly_meals[(year, month)][day][meal_type] = {
+                    "menu": menu_text,
+                    "cal": cal_str,
+                    "school_name": row.get("학교명", "학교"),
+                }
+
+        return monthly_meals, None
+    except Exception as e:
+        return None, f"CSV 로드 중 오류 발생: {e}"
 
 
 # ==========================================
-# 4. 사이드바 구성
+# 4. 데이터 로드 및 상단 컨트롤
 # ==========================================
-st.sidebar.title("⚙️ 설정 및 안내")
+csv_filename = "급식식단정보.csv"
+monthly_meals, error_msg = load_csv_meals(csv_filename)
 
-# API 키 확인
-if "NEIS_KEY" not in st.secrets:
-    st.error(
-        "⚠️ `secrets.toml`에 `NEIS_KEY`가 설정되지 않았습니다.\n.streamlit/secrets.toml 파일에 키를 추가해 주세요."
-    )
+if error_msg:
+    st.error(f"🚨 {error_msg}")
     st.stop()
 
-api_key = st.secrets["NEIS_KEY"]
+st.title("🍱 한 달치 학교 급식 달력")
 
-# 학교 정보 입력창
-office_code = st.sidebar.text_input("시도교육청코드", value="B10")
-school_code = st.sidebar.text_input("표준학교코드", value="7010537")
-
-st.sidebar.markdown("---")
-
-# 알레르기 변환 옵션
+# 사이드바 설정
+st.sidebar.title("⚙️ 설정 및 안내")
 convert_allergy = st.sidebar.toggle(
     "알레르기 식품명으로 변환",
     value=False,
     help="메뉴 옆의 숫자를 실제 식재료 이름으로 바꿉니다.",
 )
 
-# 알레르기 안내표
 with st.sidebar.expander("ℹ️ 알레르기 번호 안내표"):
     for code, name in ALLERGY_MAP.items():
         st.write(f"**{code}번**: {name}")
 
-st.sidebar.markdown("---")
-st.sidebar.caption("💡 **팁**: 인기 메뉴(치킨, 고기, 떡볶이 등)는 자동으로 ⭐형광펜 표시됩니다!")
+# 연도/월 선택 영역
+available_years = sorted(list(set([k[0] for k in monthly_meals.keys()])))
+selected_year = (
+    available_years[0] if available_years else datetime.now().year
+)
 
+available_months = sorted(
+    list(
+        set(
+            [
+                k[1]
+                for k in monthly_meals.keys()
+                if k[0] == selected_year
+            ]
+        )
+    )
+)
+selected_month = (
+    available_months[0] if available_months else datetime.now().month
+)
 
-# ==========================================
-# 5. 상단 필터 및 메인 화면
-# ==========================================
-st.title("🍱 한 달치 학교 급식 달력")
-
-now = datetime.now()
 col1, col2, col3 = st.columns([1, 1, 2])
-
 with col1:
     selected_year = st.selectbox(
-        "연도 선택", range(now.year - 1, now.year + 2), index=1
+        "연도 선택", available_years, index=0 if available_years else 0
     )
-
 with col2:
-    selected_month = st.selectbox("월 선택", range(1, 13), index=now.month - 1)
-
+    selected_month = st.selectbox(
+        "월 선택", available_months, index=0 if available_months else 0
+    )
 with col3:
     meal_filter = st.radio(
         "급식 종류 필터",
@@ -259,123 +264,101 @@ st.markdown("---")
 
 
 # ==========================================
-# 6. 데이터 불러오기 및 처리
+# 5. 달력 화면 렌더링 (안정적인 레이아웃)
 # ==========================================
-meal_raw_data, error_msg = fetch_month_meals(
-    office_code, school_code, selected_year, selected_month, api_key
-)
+current_month_data = monthly_meals.get((selected_year, selected_month), {})
 
-if error_msg:
-    st.error(f"🚨 {error_msg}")
-    st.stop()
+# 학교 이름 표시
+school_name = "학교"
+for d in current_month_data.values():
+    for m in d.values():
+        school_name = m.get("school_name", "학교")
+        break
+    break
 
-# 날짜별, 급식종류별 데이터 매핑 구조
-monthly_meals = {}
-if meal_raw_data:
-    for row in meal_raw_data:
-        try:
-            day = int(row["MLSV_YMD"][6:8])
-            meal_name = row["MMEAL_SC_NM"]  # 조식, 중식, 석식 등
-            menu_text = row["DDISH_NM"]
-            calorie_info = row.get("CAL_INFO", "")  # 칼로리 정보
+st.subheader(f"🏫 {school_name} - {selected_year}년 {selected_month}월 급식표")
 
-            if day not in monthly_meals:
-                monthly_meals[day] = {}
+now = datetime.now()
+month_cal = calendar.monthcalendar(selected_year, selected_month)
+days_of_week = ["월요일", "화요일", "수요일", "목요일", "금요일"]
 
-            monthly_meals[day][meal_name] = {
-                "menu": menu_text,
-                "cal": calorie_info,
-            }
-        except Exception as e:
-            st.error(f"데이터 파싱 실패: {e}")
+for week_idx, week in enumerate(month_cal):
+    workdays = week[:5]  # 월~금 평일만 추출
 
+    if sum(workdays) == 0:
+        continue
 
-# ==========================================
-# 7. 달력 화면 렌더링 (안정적인 st.container 사용)
-# ==========================================
-try:
-    month_cal = calendar.monthcalendar(selected_year, selected_month)
-    days_of_week = ["월요일", "화요일", "수요일", "목요일", "금요일"]
+    st.markdown(f"#### 🗓️ {week_idx + 1}주차")
+    cols = st.columns(5)
 
-    for week_idx, week in enumerate(month_cal):
-        workdays = week[:5]  # 월~금 평일만 추출
+    for i, day in enumerate(workdays):
+        with cols[i]:
+            # 주말/다른 달 날짜 처리
+            if day == 0:
+                st.caption(f"{days_of_week[i]}")
+                st.info("다른 달")
+                continue
 
-        if sum(workdays) == 0:
-            continue
+            is_today = (
+                selected_year == now.year
+                and selected_month == now.month
+                and day == now.day
+            )
 
-        st.subheader(f"🗓️ {week_idx + 1}주차")
-        cols = st.columns(5)
+            # 테두리가 있는 안전한 카드 구조
+            with st.container(border=True):
+                today_tag = " 🔥 **TODAY**" if is_today else ""
+                st.markdown(f"**{day}일 ({days_of_week[i][0]})**{today_tag}")
 
-        for i, day in enumerate(workdays):
-            with cols[i]:
-                # 지난 달 / 다음 달 날짜 처리
-                if day == 0:
-                    st.caption(f"{days_of_week[i]}")
-                    st.info("다른 달")
-                    continue
+                if day not in current_month_data:
+                    st.caption("😴 급식 없음")
+                else:
+                    day_meals = current_month_data[day]
+                    displayed_any = False
 
-                # 오늘 날짜 여부 체크
-                is_today = (
-                    selected_year == now.year
-                    and selected_month == now.month
-                    and day == now.day
-                )
-
-                # Streamlit 기본 테두리 컨테이너 사용 (깨짐 방지)
-                with st.container(border=True):
-                    # 헤더 날짜 표시
-                    today_badge = " 🔥 **TODAY**" if is_today else ""
-                    st.markdown(
-                        f"**{day}일 ({days_of_week[i][0]})**{today_badge}"
+                    # 중식 -> 석식 순 정렬
+                    sorted_meals = sorted(
+                        day_meals.items(),
+                        key=lambda x: 0 if x[0] == "중식" else 1,
                     )
 
-                    # 급식 데이터 존재 여부 확인
-                    if day not in monthly_meals:
-                        st.caption("😴 급식 없음")
-                    else:
-                        day_meals = monthly_meals[day]
-                        displayed_any = False
+                    for meal_type, meal_info in sorted_meals:
+                        if (
+                            meal_filter == "중식만 보기"
+                            and meal_type != "중식"
+                        ):
+                            continue
+                        if (
+                            meal_filter == "석식만 보기"
+                            and meal_type != "석식"
+                        ):
+                            continue
 
-                        for meal_type, meal_info in day_meals.items():
-                            # 필터링 조건
-                            if (
-                                meal_filter == "중식만 보기"
-                                and meal_type != "중식"
-                            ):
-                                continue
-                            if (
-                                meal_filter == "석식만 보기"
-                                and meal_type != "석식"
-                            ):
-                                continue
+                        displayed_any = True
 
-                            displayed_any = True
+                        # 칼로리 표시
+                        cal_html = (
+                            f" <span class='calorie-text'>({meal_info['cal']})</span>"
+                            if meal_info["cal"]
+                            else ""
+                        )
 
-                            # 칼로리 텍스트 구성
-                            cal_str = (
-                                f"<span class='calorie-text'>({meal_info['cal']})</span>"
-                                if meal_info["cal"]
-                                else ""
+                        if meal_type == "중식":
+                            st.markdown(
+                                f"<div class='badge-lunch'>🔵 {meal_type}{cal_html}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"<div class='badge-dinner'>🔴 {meal_type}{cal_html}</div>",
+                                unsafe_allow_html=True,
                             )
 
-                            # 급식 종류별 색상 배지
-                            if meal_type == "중식":
-                                badge_html = f"<div class='badge-lunch'>🔵 {meal_type} {cal_str}</div>"
-                            elif meal_type == "석식":
-                                badge_html = f"<div class='badge-dinner'>🔴 {meal_type} {cal_str}</div>"
-                            else:
-                                badge_html = f"<div class='badge-other'>🟢 {meal_type} {cal_str}</div>"
+                        # 메뉴 포맷팅
+                        formatted_menu = format_menu_items(
+                            meal_info["menu"], convert_allergy
+                        )
+                        st.markdown(formatted_menu, unsafe_allow_html=True)
 
-                            st.markdown(badge_html, unsafe_allow_html=True)
-
-                            # 메뉴 항목 포맷팅 (형광펜, 별표 적용)
-                            formatted_menu = format_menu_items(
-                                meal_info["menu"], convert_allergy
-                            )
-                            st.markdown(formatted_menu, unsafe_allow_html=True)
-
-                        if not displayed_any:
-                            st.caption("🔍 해당 식단 없음")
-
-except Exception as e:
-    st.error(f"🖥️ 화면을 구성하는 중에 오류가 발생했습니다: {e}")
+                    if not displayed_any:
+                        st.caption("🔍 해당 식단 없음")
